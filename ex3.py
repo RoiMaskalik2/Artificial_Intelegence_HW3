@@ -10,10 +10,11 @@ MOVE_DOWN = "move_down"
 MOVE_LEFT = "move_left"
 MOVE_RIGHT = "move_right"
 DELIVER = "deliver"
+PACKAGES = "packages"
 
-GAMMA = 0.9
-ALPHA = 0.9
-random_action_prob = 0.1
+GAMMA = 0.99
+ALPHA = 0.5
+random_action_prob = 0.3
 
 NUM_PACKAGES_DRONE = 2
 
@@ -28,7 +29,7 @@ class DroneAgent:
         # TODO: maybe increase the state to include number of packages
         self.current_packages_on_drone = 0
 
-        self.q_values = np.zeros((n, m, NUM_PACKAGES_DRONE, len(self.actions)))
+        self.q_values = np.zeros((n, m, NUM_PACKAGES_DRONE+1, len(self.actions)))
         self.action_num_dict = self.create_action_num_dict()
         self.num_action_dict = self.create_num_action_dict()
 
@@ -44,6 +45,10 @@ class DroneAgent:
             MOVE_RIGHT: 6,
             DELIVER: 7
         }
+
+    def get_packages_on_drone(self, obs):
+        packages = obs[PACKAGES]
+        return sum(1 for pl in packages if isinstance(pl[1], str))
 
     def create_num_action_dict(self):
         # Create a dictionary that converts a number to an action string
@@ -62,18 +67,14 @@ class DroneAgent:
         # TODO: maybe implement differently between train and eval
 
         obs_location_x, obs_location_y = obs0[DRONE_LOCATION]
+        num_packages_on_drone = self.get_packages_on_drone(obs0)
         best_action_index = np.argmax(
-            self.q_values[obs_location_x, obs_location_y, self.current_packages_on_drone])
+            self.q_values[obs_location_x, obs_location_y, num_packages_on_drone])
 
         if self.mode == 'train' and random.uniform(0, 1) < random_action_prob:
             action = random.choice(self.actions)
         else:
             action = self.num_action_dict[best_action_index]
-
-        if action == PICK:
-            self.current_packages_on_drone += 1
-        if action == DELIVER:
-            self.current_packages_on_drone -= 1
 
         return action
 
@@ -88,13 +89,15 @@ class DroneAgent:
         obs0_location_x, obs0_location_y = obs0[DRONE_LOCATION]
         obs1_location_x, obs1_location_y = obs1[DRONE_LOCATION]
 
-        action_index = self.action_num_dict[action]
-        old_q_value = self.q_values[
-            obs0_location_x, obs0_location_y, self.current_packages_on_drone, action_index]
-        # Got stuck on adding package number on the next action
-        td_value = reward + GAMMA * np.max(
-            self.q_values[obs1_location_x, obs1_location_y]) - old_q_value
+        obs0_packages_on_drone = self.get_packages_on_drone(obs0)
+        obs1_packages_on_drone = self.get_packages_on_drone(obs1)
 
-        self.q_values[obs0_location_x, obs0_location_y, self.current_packages_on_drone,
-                      action_index] = old_q_value + ALPHA * \
-                                      td_value
+        action_index = self.action_num_dict[action]
+
+        old_q_value = self.q_values[obs0_location_x, obs0_location_y, obs0_packages_on_drone,
+                                    action_index]
+        td_value = reward + GAMMA * np.max(
+            self.q_values[obs1_location_x, obs1_location_y, obs1_packages_on_drone]) - old_q_value
+
+        self.q_values[obs0_location_x, obs0_location_y, obs0_packages_on_drone, action_index] = (
+                old_q_value + ALPHA * td_value)
