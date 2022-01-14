@@ -8,7 +8,7 @@ from trainer import DroneTrainer
 
 AGENT_INIT_TIME_LIMIT = 1.
 EPISODE_TIME_LIMIT = 4e-3
-NR_TRAIN_EPISODES = int(200e3)
+NR_TRAIN_EPISODES = int(5e3)
 NR_TEST_EPISODES = int(10e3)
 
 logging.getLogger().setLevel(logging.INFO)

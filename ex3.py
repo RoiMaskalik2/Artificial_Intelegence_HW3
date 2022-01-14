@@ -12,9 +12,9 @@ MOVE_RIGHT = "move_right"
 DELIVER = "deliver"
 PACKAGES = "packages"
 
-GAMMA = 0.99
-ALPHA = 0.5
-random_action_prob = 0.3
+GAMMA = 0.9
+ALPHA = 0.9
+random_action_prob = 0.1
 
 NUM_PACKAGES_DRONE = 2
 
@@ -28,8 +28,9 @@ class DroneAgent:
         self.actions = [RESET, WAIT, PICK, MOVE_UP, MOVE_DOWN, MOVE_LEFT, MOVE_RIGHT, DELIVER]
         # TODO: maybe increase the state to include number of packages
         self.current_packages_on_drone = 0
+        self.visited = set()
 
-        self.q_values = np.zeros((n, m, NUM_PACKAGES_DRONE+1, len(self.actions)))
+        self.q_values = np.zeros((n, m, NUM_PACKAGES_DRONE + 1, 2, len(self.actions)))
         self.action_num_dict = self.create_action_num_dict()
         self.num_action_dict = self.create_num_action_dict()
 
@@ -45,6 +46,12 @@ class DroneAgent:
             MOVE_RIGHT: 6,
             DELIVER: 7
         }
+
+    def package_exists_on_drone_location(self, obs):
+        location = obs[DRONE_LOCATION]
+        packages = obs[PACKAGES]
+
+        return int(sum(1 for pl in packages if pl[1] == location) > 0)
 
     def get_packages_on_drone(self, obs):
         packages = obs[PACKAGES]
@@ -65,15 +72,21 @@ class DroneAgent:
 
     def select_action(self, obs0):
         # TODO: maybe implement differently between train and eval
-
+        if not obs0[PACKAGES]:
+            return RESET
         obs_location_x, obs_location_y = obs0[DRONE_LOCATION]
         num_packages_on_drone = self.get_packages_on_drone(obs0)
-        best_action_index = np.argmax(
-            self.q_values[obs_location_x, obs_location_y, num_packages_on_drone])
+        is_package_exists = self.package_exists_on_drone_location(obs0)
 
-        if self.mode == 'train' and random.uniform(0, 1) < random_action_prob:
+        state_obs = (obs_location_x, obs_location_y, num_packages_on_drone)
+
+        if self.mode == 'train' and (random.uniform(0, 1) < random_action_prob or state_obs not in
+                                     self.visited):
             action = random.choice(self.actions)
         else:
+            values = self.q_values[
+                    obs_location_x, obs_location_y, num_packages_on_drone, is_package_exists]
+            best_action_index = np.random.choice(np.flatnonzero(values == values.max()))
             action = self.num_action_dict[best_action_index]
 
         return action
@@ -92,12 +105,19 @@ class DroneAgent:
         obs0_packages_on_drone = self.get_packages_on_drone(obs0)
         obs1_packages_on_drone = self.get_packages_on_drone(obs1)
 
+        is_package_exists_obs0 = self.package_exists_on_drone_location(obs0)
+        is_package_exists_obs1 = self.package_exists_on_drone_location(obs1)
+
+        visited_observation = (obs0_location_x, obs0_location_y, obs0_packages_on_drone)
+        self.visited.add(visited_observation)
         action_index = self.action_num_dict[action]
 
         old_q_value = self.q_values[obs0_location_x, obs0_location_y, obs0_packages_on_drone,
-                                    action_index]
+                                    is_package_exists_obs0, action_index]
         td_value = reward + GAMMA * np.max(
-            self.q_values[obs1_location_x, obs1_location_y, obs1_packages_on_drone]) - old_q_value
+            self.q_values[
+                obs1_location_x, obs1_location_y, obs1_packages_on_drone, is_package_exists_obs1]) - old_q_value
 
-        self.q_values[obs0_location_x, obs0_location_y, obs0_packages_on_drone, action_index] = (
+        self.q_values[obs0_location_x, obs0_location_y, obs0_packages_on_drone,
+                      is_package_exists_obs0, action_index] = (
                 old_q_value + ALPHA * td_value)
