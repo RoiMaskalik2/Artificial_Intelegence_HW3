@@ -105,7 +105,7 @@ class DroneEnv:
         if action == 'reset':
             reward = self._execute_action(action)
             obs1 = self._next_observation()
-            done = False
+            done = True
             return obs1, reward, done
         # execute action
         if random.random() < self.success_rate:
