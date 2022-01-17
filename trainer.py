@@ -1,7 +1,7 @@
 import logging
 from time import perf_counter
 
-AGENT_ACTION_CALL_TIME_LIMIT = .2
+AGENT_ACTION_CALL_TIME_LIMIT = .9
 MAXIMUM_STEPS_PER_EPISODE = 30
 
 

@@ -11,10 +11,12 @@ MOVE_LEFT = "move_left"
 MOVE_RIGHT = "move_right"
 DELIVER = "deliver"
 PACKAGES = "packages"
+TARGET_LOCATION = "target_location"
 
 GAMMA = 0.9
 ALPHA = 0.9
-random_action_prob = 0.2
+random_not_visited_prob = 0.1
+random_action_prob = 0.05
 
 NUM_PACKAGES_DRONE = 2
 
@@ -34,9 +36,10 @@ class DroneAgent:
         # TODO: maybe increase the state to include number of packages
         self.current_packages_on_drone = 0
         self.visited = set()
-        self.current_round = 0
+        self.current_round = -1
+        self.reset_round = False
 
-        self.q_values = np.zeros((n, m,NUM_PARTS_OF_EPISODE, NUM_PACKAGES_DRONE + 1, 2,
+        self.q_values = np.zeros((n, m, n, m, NUM_PARTS_OF_EPISODE, NUM_PACKAGES_DRONE + 1, 2,
                                   len(self.actions)))
         self.action_num_dict = self.create_action_num_dict()
         self.num_action_dict = self.create_num_action_dict()
@@ -47,6 +50,21 @@ class DroneAgent:
         if self.current_round < 20:
             return MIDDLE_OF_EPISODE
         return END_OF_EPISODE
+
+    def closest_package_location(self, obs):
+        drone_location = obs[DRONE_LOCATION]
+        packages = obs[PACKAGES]
+        closest_package = obs[TARGET_LOCATION]
+        closest_distance = np.inf
+        for package in packages:
+            if not isinstance(package[1], str):
+                package_location = package[1]
+                distance = np.linalg.norm(np.array(drone_location) - np.array(package_location))
+                if distance < closest_distance:
+                    closest_package = package_location
+                    closest_distance = distance
+        return closest_package
+
     def create_action_num_dict(self):
         # Create a dictionary that converts an action to a number for np.array access
         return {
@@ -88,19 +106,20 @@ class DroneAgent:
         if not obs0[PACKAGES]:
             return RESET
         obs_location_x, obs_location_y = obs0[DRONE_LOCATION]
+        closest_package_x, closest_package_y = self.closest_package_location(obs0)
         num_packages_on_drone = self.get_packages_on_drone(obs0)
         is_package_exists = self.package_exists_on_drone_location(obs0)
 
-        state_obs = (obs_location_x, obs_location_y, num_packages_on_drone)
         q_values = self.q_values[
-            obs_location_x, obs_location_y,self.get_part_of_episode(), num_packages_on_drone, is_package_exists]
+            obs_location_x, obs_location_y, closest_package_x, closest_package_y,
+            self.get_part_of_episode(), num_packages_on_drone, is_package_exists]
 
-        if self.mode == 'train' and (random.uniform(0, 1) < random_action_prob):
-            if 0 in q_values:
-                not_visited_action_index = np.random.choice(np.flatnonzero(q_values == 0))
-                action = self.num_action_dict[not_visited_action_index]
-            else:
-                action = random.choice(self.actions)
+        if self.mode == 'train' and 0 in q_values and random.uniform(0,
+                                                                     1) < random_not_visited_prob:
+            not_visited_action_index = np.random.choice(np.flatnonzero(q_values == 0))
+            action = self.num_action_dict[not_visited_action_index]
+        elif self.mode == 'train' and random.uniform(0, 1) < random_action_prob:
+            action = random.choice(self.actions)
         else:
             best_action_index = np.random.choice(np.flatnonzero(q_values == q_values.max()))
             action = self.num_action_dict[best_action_index]
@@ -114,7 +133,12 @@ class DroneAgent:
         self.mode = 'eval'  # do not change this!
 
     def update(self, obs0, action, obs1, reward):
-        # TODO: maybe convert the obs dictionary to a string with pickle
+        if self.reset_round:
+            self.reset_round = False
+            self.current_round = -1
+
+        self.current_round += 1
+
         if action == DELIVER and reward == -1:
             reward = -20
 
@@ -130,27 +154,35 @@ class DroneAgent:
         current_part_of_episode = self.get_part_of_episode()
         self.current_round += 1
         next_part_of_episode = self.get_part_of_episode()
+        self.current_round -= 1
 
         is_package_exists_obs0 = self.package_exists_on_drone_location(obs0)
         is_package_exists_obs1 = self.package_exists_on_drone_location(obs1)
 
-        visited_observation = (obs0_location_x, obs0_location_y,current_part_of_episode,
+        obs0_closest_package_x, obs0_closest_package_y = self.closest_package_location(obs1)
+        obs1_closest_package_x, obs1_closest_package_y = self.closest_package_location(obs1)
+
+        visited_observation = (obs0_location_x, obs0_location_y,obs0_closest_package_x,
+                               obs0_closest_package_y, current_part_of_episode,
                                obs0_packages_on_drone)
         self.visited.add(visited_observation)
         action_index = self.action_num_dict[action]
 
-        old_q_value = self.q_values[obs0_location_x, obs0_location_y,current_part_of_episode,
+        old_q_value = self.q_values[obs0_location_x, obs0_location_y,obs0_closest_package_x,
+                                    obs0_closest_package_y, current_part_of_episode,
                                     obs0_packages_on_drone,
                                     is_package_exists_obs0, action_index]
         td_value = reward + GAMMA * np.max(
             self.q_values[
-                obs1_location_x, obs1_location_y,next_part_of_episode, obs1_packages_on_drone,
+                obs1_location_x, obs1_location_y,obs1_closest_package_x, obs1_closest_package_y,
+                next_part_of_episode, obs1_packages_on_drone,
                 is_package_exists_obs1]) - old_q_value
 
-        self.q_values[obs0_location_x, obs0_location_y,current_part_of_episode,
+        self.q_values[obs0_location_x, obs0_location_y,obs0_closest_package_x,
+                      obs0_closest_package_y, current_part_of_episode,
                       obs0_packages_on_drone,
                       is_package_exists_obs0, action_index] = (
                 old_q_value + ALPHA * td_value)
 
-        if self.current_round == 29 or action == RESET:
-            self.current_round = 0
+        if self.current_round >= 30 or action == RESET:
+            self.reset_round = True
