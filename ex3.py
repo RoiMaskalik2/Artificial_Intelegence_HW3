@@ -83,8 +83,11 @@ class DroneAgent:
         }
 
     def select_action(self, obs0):
-        print(obs0)
         # TODO: maybe implement differently between train and eval
+        obs_as_key = self.obs_to_key(obs0)
+
+        self.add_obs_if_not_exists(obs_as_key)
+
         if not obs0[PACKAGES]:
             return RESET
 
@@ -99,9 +102,9 @@ class DroneAgent:
 
         # state_obs = (obs_location_x, obs_location_y, num_packages_on_drone)
 
-        obs_as_key = self.obs_to_key(obs0)
-
-        self.add_obs_if_not_exists(obs_as_key)
+        # obs_as_key = self.obs_to_key(obs0)
+        #
+        # self.add_obs_if_not_exists(obs_as_key)
 
         q_values = self.q_values[obs_as_key]
 
